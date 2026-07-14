@@ -164,34 +164,7 @@ impl StellarInvoiceContract {
 impl StellarInvoiceContract {
     // Create invoice and return id
     pub fn create_invoice(env: Env, issuer: Address, payer: Address, amount: i128, currency: Symbol, due_date: u64) -> u64 {
-        // increment counter
-        let mut counter = Self::get_counter(&env);
-        counter += 1;
-        Self::set_counter(&env, counter);
-
-        let created_at = env.ledger().timestamp();
-
-        let invoice = Invoice {
-            id: counter,
-            issuer: issuer.clone(),
-            payer: payer.clone(),
-            amount,
-            currency: currency.clone(),
-            due_date,
-            status: Status::Created,
-            created_at,
-            paid_amount: 0,
-        };
-
-        // persist
-        StellarInvoiceContract::store_invoice(&env, &invoice);
-        StellarInvoiceContract::push_invoice_to_address(&env, &issuer, invoice.id);
-        StellarInvoiceContract::push_invoice_to_address(&env, &payer, invoice.id);
-
-        // emit event
-        env.events().publish((symbol_short!("Invoice"), symbol_short!("Created")), (invoice.id, issuer, payer, amount, currency, due_date));
-
-        invoice.id
+        Self::create_invoice_record(&env, issuer, payer, amount, currency, due_date)
     }
 
     pub fn pay_invoice(env: Env, invoice_id: u64, payer: Address, amount: i128) {
