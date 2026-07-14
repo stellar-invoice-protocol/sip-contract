@@ -394,6 +394,21 @@ mod test {
     }
 
     #[test]
+    fn test_plain_invoice_has_no_reference() {
+        let env = TestEnv::default();
+        let id = StellarInvoiceContract::create_invoice(
+            env.clone(),
+            addr_from_byte(&env, 18),
+            addr_from_byte(&env, 19),
+            100_i128,
+            Symbol::short("XLM"),
+            env.ledger().timestamp() + 1000,
+        );
+
+        assert_eq!(StellarInvoiceContract::get_invoice_reference(env, id), None);
+    }
+
+    #[test]
     fn test_overdue_transition() {
         let env = TestEnv::default();
         let issuer = addr_from_byte(&env, 5);
