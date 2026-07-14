@@ -147,8 +147,11 @@ impl StellarInvoiceContract {
         );
     }
 
-    fn attach_invoice_reference(env: &Env, id: u64, _issuer: &Address, reference: &String) {
-        Self::load_invoice(env, id).expect("invoice_not_found");
+    fn attach_invoice_reference(env: &Env, id: u64, issuer: &Address, reference: &String) {
+        let invoice = Self::load_invoice(env, id).expect("invoice_not_found");
+        if invoice.issuer != *issuer {
+            panic!("only_issuer_can_set_reference");
+        }
         Self::validate_reference(reference);
         Self::store_invoice_reference(env, id, reference);
         Self::publish_invoice_reference_set(env, id, reference);
