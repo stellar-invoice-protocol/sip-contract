@@ -1,10 +1,10 @@
 #![no_std]
 
-use soroban_sdk::{contractimpl, symbol, Address, Env, Symbol, Vec, BytesN};
-use soroban_sdk::serde::{Deserialize, Serialize};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec};
 
 // Invoice status
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     Created,
     PartiallyPaid,
@@ -13,7 +13,8 @@ pub enum Status {
     Cancelled,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct Invoice {
     pub id: u64,
     pub issuer: Address,
@@ -26,68 +27,57 @@ pub struct Invoice {
     pub paid_amount: i128,
 }
 
-// Storage keys (instance/persistent) - using simple string-based keys that implement IntoVal
-const COUNTER_KEY: &str = "INVOICE_COUNTER";
-const PREFIX_INVOICE: &str = "INVOICE:";
-const PREFIX_ADDR_IDX: &str = "ADDR_IDX:"; // mapping address -> Vec<u64>
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataKey {
+    Counter,
+    Invoice(u64),
+    AddrIdx(Address),
+}
 
+#[contract]
 pub struct StellarInvoiceContract;
 
+
 impl StellarInvoiceContract {
-    fn make_invoice_key(id: u64) -> String {
-        let mut s = String::from(PREFIX_INVOICE);
-        s.push_str(&id.to_string());
-        s
-    }
-
-    fn make_addr_idx_key(addr: &Address) -> String {
-        let mut s = String::from(PREFIX_ADDR_IDX);
-        s.push_str(&format!("{:?}", addr));
-        s
-    }
-
     fn get_counter(env: &Env) -> u64 {
-        env.storage()
-            .get(&COUNTER_KEY)
-            .unwrap_or(Ok(0_u64))
-            .unwrap()
+        env.storage().instance().get(&DataKey::Counter).unwrap_or(0_u64)
     }
 
     fn set_counter(env: &Env, v: u64) {
-        env.storage().set(&COUNTER_KEY, &v);
+        env.storage().instance().set(&DataKey::Counter, &v);
     }
 
     fn store_invoice(env: &Env, invoice: &Invoice) {
-        let key = Self::make_invoice_key(invoice.id);
-        env.storage().set(&key, invoice);
+        env.storage().persistent().set(&DataKey::Invoice(invoice.id), invoice);
     }
 
     fn load_invoice(env: &Env, id: u64) -> Option<Invoice> {
-        let key = Self::make_invoice_key(id);
-        env.storage().get(&key)
+        env.storage().persistent().get(&DataKey::Invoice(id))
     }
 
     fn push_invoice_to_address(env: &Env, addr: &Address, id: u64) {
-        let key = Self::make_addr_idx_key(addr);
-        let mut list: Vec<u64> = env.storage().get(&key).unwrap_or(Ok(Vec::new(env))).unwrap();
+        let key = DataKey::AddrIdx(addr.clone());
+        let mut list: Vec<u64> = env.storage().persistent().get(&key).unwrap_or_else(|| Vec::new(env));
         list.push_back(id);
-        env.storage().set(&key, &list);
+        env.storage().persistent().set(&key, &list);
     }
 
     fn get_invoices_for_address(env: &Env, addr: &Address) -> Vec<u64> {
-        let key = Self::make_addr_idx_key(addr);
-        env.storage().get(&key).unwrap_or(Ok(Vec::new(env))).unwrap()
+        let key = DataKey::AddrIdx(addr.clone());
+        env.storage().persistent().get(&key).unwrap_or_else(|| Vec::new(env))
     }
 }
+
 
 #[contractimpl]
 impl StellarInvoiceContract {
     // Create invoice and return id
     pub fn create_invoice(env: Env, issuer: Address, payer: Address, amount: i128, currency: Symbol, due_date: u64) -> u64 {
         // increment counter
-        let mut counter = env.storage().get(&COUNTER_KEY).unwrap_or(Ok(0_u64)).unwrap();
+        let mut counter = Self::get_counter(&env);
         counter += 1;
-        env.storage().set(&COUNTER_KEY, &counter);
+        Self::set_counter(&env, counter);
 
         let created_at = env.ledger().timestamp();
 
@@ -109,7 +99,7 @@ impl StellarInvoiceContract {
         StellarInvoiceContract::push_invoice_to_address(&env, &payer, invoice.id);
 
         // emit event
-        env.events().publish((symbol!("Invoice"), symbol!("Created")), (invoice.id, issuer, payer, amount, currency, due_date));
+        env.events().publish((symbol_short!("Invoice"), symbol_short!("Created")), (invoice.id, issuer, payer, amount, currency, due_date));
 
         invoice.id
     }
@@ -143,7 +133,7 @@ impl StellarInvoiceContract {
 
         StellarInvoiceContract::store_invoice(&env, &invoice);
 
-        env.events().publish((symbol!("Invoice"), symbol!("Paid")), (invoice.id, payer, amount, invoice.paid_amount, invoice.status));
+        env.events().publish((symbol_short!("Invoice"), symbol_short!("Paid")), (invoice.id, payer, amount, invoice.paid_amount, invoice.status));
     }
 
     pub fn get_invoice(env: Env, invoice_id: u64) -> Invoice {
@@ -160,7 +150,7 @@ impl StellarInvoiceContract {
         }
         invoice.status = Status::Cancelled;
         StellarInvoiceContract::store_invoice(&env, &invoice);
-        env.events().publish((symbol!("Invoice"), symbol!("Cancelled")), (invoice.id, issuer));
+        env.events().publish((symbol_short!("Invoice"), symbol_short!("Cancelled")), (invoice.id, issuer));
     }
 
     pub fn list_invoices_by_address(env: Env, addr: Address) -> Vec<u64> {
@@ -173,7 +163,7 @@ impl StellarInvoiceContract {
         if invoice.status != Status::Paid && invoice.status != Status::Cancelled && ts > invoice.due_date {
             invoice.status = Status::Overdue;
             StellarInvoiceContract::store_invoice(&env, &invoice);
-            env.events().publish((symbol!("Invoice"), symbol!("Overdue")), (invoice.id, invoice.due_date, ts));
+            env.events().publish((symbol_short!("Invoice"), symbol_short!("Overdue")), (invoice.id, invoice.due_date, ts));
         }
     }
 }

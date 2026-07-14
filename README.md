@@ -61,3 +61,10 @@ Contract function reference
 Notes
 - Currency is represented as a Symbol (e.g., `Symbol::short("XLM")`) or any token contract Address can be stored in the currency field in future updates.
 - This initial version focuses on invoice lifecycle and storage; token transfers are out of scope for this iteration.
+
+## Security & Access Control
+
+1. **Payer Verification**: Only the designated `payer` is authorized to make payments towards an invoice. Overpayments are guarded against at the contract level.
+2. **Issuer Verification**: Only the `issuer` who created the invoice is authorized to cancel it. Cancelation is restricted to unpaid, un-cancelled, and un-expired invoices.
+3. **Overdue Transitions**: The `mark_overdue` function is permissionless but strictly validates the ledger timestamp against the due date before updating the state.
+
