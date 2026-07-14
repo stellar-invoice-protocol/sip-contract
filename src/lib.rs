@@ -429,6 +429,22 @@ mod test {
     }
 
     #[test]
+    #[should_panic(expected = "empty_invoice_reference")]
+    fn test_reject_empty_invoice_reference() {
+        let env = TestEnv::default();
+        env.mock_all_auths();
+        StellarInvoiceContract::create_invoice_with_reference(
+            env.clone(),
+            addr_from_byte(&env, 22),
+            addr_from_byte(&env, 23),
+            100_i128,
+            Symbol::short("XLM"),
+            env.ledger().timestamp() + 1000,
+            String::from_str(&env, ""),
+        );
+    }
+
+    #[test]
     fn test_overdue_transition() {
         let env = TestEnv::default();
         let issuer = addr_from_byte(&env, 5);
