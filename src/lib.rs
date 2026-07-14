@@ -125,6 +125,20 @@ impl StellarInvoiceContract {
         let key = DataKey::AddrIdx(addr.clone());
         env.storage().persistent().get(&key).unwrap_or_else(|| Vec::new(env))
     }
+
+    fn publish_invoice_created(env: &Env, invoice: &Invoice) {
+        env.events().publish(
+            (symbol_short!("Invoice"), symbol_short!("Created")),
+            (
+                invoice.id,
+                invoice.issuer.clone(),
+                invoice.payer.clone(),
+                invoice.amount,
+                invoice.currency.clone(),
+                invoice.due_date,
+            ),
+        );
+    }
 }
 
 
