@@ -18,3 +18,9 @@ feature to remain optional without adding placeholder data to every invoice.
 - A reference may contain at most 64 bytes.
 - A reference is immutable after invoice creation.
 - Only the invoice issuer may authorize a referenced invoice.
+
+## Event
+
+Creating a referenced invoice emits the normal `Invoice/Created` event followed
+by `Invoice/RefSet`. The reference event contains the invoice ID and reference
+string so indexers can reconcile records without reading contract storage.
