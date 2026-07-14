@@ -140,6 +140,13 @@ impl StellarInvoiceContract {
         );
     }
 
+    fn publish_invoice_reference_set(env: &Env, id: u64, reference: &String) {
+        env.events().publish(
+            (symbol_short!("Invoice"), symbol_short!("RefSet")),
+            (id, reference.clone()),
+        );
+    }
+
     fn create_invoice_record(
         env: &Env,
         issuer: Address,
