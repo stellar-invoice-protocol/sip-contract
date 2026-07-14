@@ -188,6 +188,27 @@ impl StellarInvoiceContract {
         Self::create_invoice_record(&env, issuer, payer, amount, currency, due_date)
     }
 
+    pub fn create_invoice_with_reference(
+        env: Env,
+        issuer: Address,
+        payer: Address,
+        amount: i128,
+        currency: Symbol,
+        due_date: u64,
+        reference: String,
+    ) -> u64 {
+        let id = Self::create_invoice_record(
+            &env,
+            issuer.clone(),
+            payer,
+            amount,
+            currency,
+            due_date,
+        );
+        Self::attach_invoice_reference(&env, id, &issuer, &reference);
+        id
+    }
+
     pub fn set_invoice_reference(env: Env, invoice_id: u64, issuer: Address, reference: String) {
         Self::attach_invoice_reference(&env, invoice_id, &issuer, &reference);
     }
