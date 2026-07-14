@@ -47,6 +47,9 @@ impl StellarInvoiceContract {
         if reference.len() == 0 {
             panic!("empty_invoice_reference");
         }
+        if reference.len() > MAX_REFERENCE_LENGTH {
+            panic!("invoice_reference_too_long");
+        }
     }
 
     fn get_counter(env: &Env) -> u64 {
