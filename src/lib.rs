@@ -35,6 +35,7 @@ pub enum DataKey {
     Counter,
     Invoice(u64),
     AddrIdx(Address),
+    InvoiceReference(u64),
 }
 
 #[contract]
