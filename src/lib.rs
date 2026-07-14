@@ -478,6 +478,45 @@ mod test {
     }
 
     #[test]
+    #[should_panic(expected = "only_issuer_can_set_reference")]
+    fn test_reject_reference_from_non_issuer() {
+        let env = TestEnv::default();
+        env.mock_all_auths();
+        let id = StellarInvoiceContract::create_invoice(
+            env.clone(),
+            addr_from_byte(&env, 28),
+            addr_from_byte(&env, 29),
+            100_i128,
+            Symbol::short("XLM"),
+            env.ledger().timestamp() + 1000,
+        );
+        StellarInvoiceContract::set_invoice_reference(
+            env.clone(),
+            id,
+            addr_from_byte(&env, 30),
+            String::from_str(&env, "PO-1"),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "invoice_reference_already_set")]
+    fn test_reject_reference_replacement() {
+        let env = TestEnv::default();
+        env.mock_all_auths();
+        let issuer = addr_from_byte(&env, 31);
+        let id = StellarInvoiceContract::create_invoice_with_reference(
+            env.clone(),
+            issuer.clone(),
+            addr_from_byte(&env, 32),
+            100_i128,
+            Symbol::short("XLM"),
+            env.ledger().timestamp() + 1000,
+            String::from_str(&env, "PO-1"),
+        );
+        StellarInvoiceContract::set_invoice_reference(env.clone(), id, issuer, String::from_str(&env, "PO-2"));
+    }
+
+    #[test]
     fn test_overdue_transition() {
         let env = TestEnv::default();
         let issuer = addr_from_byte(&env, 5);
