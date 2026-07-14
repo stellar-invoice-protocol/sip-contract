@@ -289,6 +289,26 @@ mod test {
     }
 
     #[test]
+    fn test_created_invoice_is_indexed_for_both_parties() {
+        let env = TestEnv::default();
+        let issuer = addr_from_byte(&env, 14);
+        let payer = addr_from_byte(&env, 15);
+        let id = StellarInvoiceContract::create_invoice(
+            env.clone(), issuer.clone(), payer.clone(), 100_i128,
+            Symbol::short("XLM"), env.ledger().timestamp() + 1000,
+        );
+
+        assert_eq!(
+            StellarInvoiceContract::list_invoices_by_address(env.clone(), issuer).get(0),
+            Some(id),
+        );
+        assert_eq!(
+            StellarInvoiceContract::list_invoices_by_address(env, payer).get(0),
+            Some(id),
+        );
+    }
+
+    #[test]
     fn test_overdue_transition() {
         let env = TestEnv::default();
         let issuer = addr_from_byte(&env, 5);
