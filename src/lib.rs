@@ -66,6 +66,28 @@ impl StellarInvoiceContract {
         id
     }
 
+    fn new_invoice(
+        env: &Env,
+        id: u64,
+        issuer: Address,
+        payer: Address,
+        amount: i128,
+        currency: Symbol,
+        due_date: u64,
+    ) -> Invoice {
+        Invoice {
+            id,
+            issuer,
+            payer,
+            amount,
+            currency,
+            due_date,
+            status: Status::Created,
+            created_at: env.ledger().timestamp(),
+            paid_amount: 0,
+        }
+    }
+
     fn store_invoice(env: &Env, invoice: &Invoice) {
         env.storage().persistent().set(&DataKey::Invoice(invoice.id), invoice);
     }
