@@ -7,3 +7,7 @@ account, or accounting-system entry.
 References are optional. Existing clients can continue creating invoices
 without one, while integrations that need reconciliation can attach one when
 the invoice is created.
+
+References are stored separately from `Invoice` records. This keeps the
+serialized invoice shape stable for already-deployed contracts and allows the
+feature to remain optional without adding placeholder data to every invoice.
