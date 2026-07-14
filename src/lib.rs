@@ -139,6 +139,24 @@ impl StellarInvoiceContract {
             ),
         );
     }
+
+    fn create_invoice_record(
+        env: &Env,
+        issuer: Address,
+        payer: Address,
+        amount: i128,
+        currency: Symbol,
+        due_date: u64,
+    ) -> u64 {
+        let id = Self::next_invoice_id(env);
+        let invoice = Self::new_invoice(env, id, issuer, payer, amount, currency, due_date);
+
+        Self::store_invoice(env, &invoice);
+        Self::push_invoice_to_address(env, &invoice.issuer, id);
+        Self::push_invoice_to_address(env, &invoice.payer, id);
+        Self::publish_invoice_created(env, &invoice);
+        id
+    }
 }
 
 
