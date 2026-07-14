@@ -279,7 +279,10 @@ impl StellarInvoiceContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Address, Env, Symbol,
+    };
 
     fn addr_from_byte(env: &Env, _b: u8) -> Address {
         Address::generate(env)
