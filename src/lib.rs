@@ -445,6 +445,39 @@ mod test {
     }
 
     #[test]
+    fn test_accept_reference_at_length_limit() {
+        let env = TestEnv::default();
+        env.mock_all_auths();
+        let reference = String::from_str(&env, "1234567890123456789012345678901234567890123456789012345678901234");
+        let id = StellarInvoiceContract::create_invoice_with_reference(
+            env.clone(),
+            addr_from_byte(&env, 24),
+            addr_from_byte(&env, 25),
+            100_i128,
+            Symbol::short("XLM"),
+            env.ledger().timestamp() + 1000,
+            reference.clone(),
+        );
+        assert_eq!(StellarInvoiceContract::get_invoice_reference(env, id), Some(reference));
+    }
+
+    #[test]
+    #[should_panic(expected = "invoice_reference_too_long")]
+    fn test_reject_reference_over_length_limit() {
+        let env = TestEnv::default();
+        env.mock_all_auths();
+        StellarInvoiceContract::create_invoice_with_reference(
+            env.clone(),
+            addr_from_byte(&env, 26),
+            addr_from_byte(&env, 27),
+            100_i128,
+            Symbol::short("XLM"),
+            env.ledger().timestamp() + 1000,
+            String::from_str(&env, "12345678901234567890123456789012345678901234567890123456789012345"),
+        );
+    }
+
+    #[test]
     fn test_overdue_transition() {
         let env = TestEnv::default();
         let issuer = addr_from_byte(&env, 5);
