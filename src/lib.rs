@@ -154,6 +154,9 @@ impl StellarInvoiceContract {
         }
         issuer.require_auth();
         Self::validate_reference(reference);
+        if Self::has_invoice_reference(env, id) {
+            panic!("invoice_reference_already_set");
+        }
         Self::store_invoice_reference(env, id, reference);
         Self::publish_invoice_reference_set(env, id, reference);
     }
