@@ -152,6 +152,7 @@ impl StellarInvoiceContract {
         if invoice.issuer != *issuer {
             panic!("only_issuer_can_set_reference");
         }
+        issuer.require_auth();
         Self::validate_reference(reference);
         Self::store_invoice_reference(env, id, reference);
         Self::publish_invoice_reference_set(env, id, reference);
