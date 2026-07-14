@@ -2,6 +2,8 @@
 
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
+const MAX_REFERENCE_LENGTH: u32 = 64;
+
 // Invoice status
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
