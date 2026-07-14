@@ -1,6 +1,8 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String, Symbol, Vec};
+
+const MAX_REFERENCE_LENGTH: u32 = 64;
 
 // Invoice status
 #[contracttype]
@@ -33,13 +35,22 @@ pub enum DataKey {
     Counter,
     Invoice(u64),
     AddrIdx(Address),
+    InvoiceReference(u64),
 }
 
 #[contract]
 pub struct StellarInvoiceContract;
 
-
 impl StellarInvoiceContract {
+    fn validate_reference(reference: &String) {
+        if reference.len() == 0 {
+            panic!("empty_invoice_reference");
+        }
+        if reference.len() > MAX_REFERENCE_LENGTH {
+            panic!("invoice_reference_too_long");
+        }
+    }
+
     fn get_counter(env: &Env) -> u64 {
         env.storage().instance().get(&DataKey::Counter).unwrap_or(0_u64)
     }
@@ -48,12 +59,52 @@ impl StellarInvoiceContract {
         env.storage().instance().set(&DataKey::Counter, &v);
     }
 
+    fn next_invoice_id(env: &Env) -> u64 {
+        let id = Self::get_counter(env) + 1;
+        Self::set_counter(env, id);
+        id
+    }
+
+    fn new_invoice(
+        env: &Env,
+        id: u64,
+        issuer: Address,
+        payer: Address,
+        amount: i128,
+        currency: Symbol,
+        due_date: u64,
+    ) -> Invoice {
+        Invoice {
+            id,
+            issuer,
+            payer,
+            amount,
+            currency,
+            due_date,
+            status: Status::Created,
+            created_at: env.ledger().timestamp(),
+            paid_amount: 0,
+        }
+    }
+
     fn store_invoice(env: &Env, invoice: &Invoice) {
         env.storage().persistent().set(&DataKey::Invoice(invoice.id), invoice);
     }
 
     fn load_invoice(env: &Env, id: u64) -> Option<Invoice> {
         env.storage().persistent().get(&DataKey::Invoice(id))
+    }
+
+    fn store_invoice_reference(env: &Env, id: u64, reference: &String) {
+        env.storage().persistent().set(&DataKey::InvoiceReference(id), reference);
+    }
+
+    fn load_invoice_reference(env: &Env, id: u64) -> Option<String> {
+        env.storage().persistent().get(&DataKey::InvoiceReference(id))
+    }
+
+    fn has_invoice_reference(env: &Env, id: u64) -> bool {
+        env.storage().persistent().has(&DataKey::InvoiceReference(id))
     }
 
     fn push_invoice_to_address(env: &Env, addr: &Address, id: u64) {
@@ -67,41 +118,93 @@ impl StellarInvoiceContract {
         let key = DataKey::AddrIdx(addr.clone());
         env.storage().persistent().get(&key).unwrap_or_else(|| Vec::new(env))
     }
-}
 
+    fn publish_invoice_created(env: &Env, invoice: &Invoice) {
+        env.events().publish(
+            (symbol_short!("Invoice"), symbol_short!("Created")),
+            (
+                invoice.id,
+                invoice.issuer.clone(),
+                invoice.payer.clone(),
+                invoice.amount,
+                invoice.currency.clone(),
+                invoice.due_date,
+            ),
+        );
+    }
+
+    fn publish_invoice_reference_set(env: &Env, id: u64, reference: &String) {
+        env.events().publish((symbol_short!("Invoice"), symbol_short!("RefSet")), (id, reference.clone()));
+    }
+
+    fn attach_invoice_reference(env: &Env, id: u64, issuer: &Address, reference: &String) {
+        let invoice = Self::load_invoice(env, id).expect("invoice_not_found");
+        if invoice.issuer != *issuer {
+            panic!("only_issuer_can_set_reference");
+        }
+        issuer.require_auth();
+        Self::validate_reference(reference);
+        if Self::has_invoice_reference(env, id) {
+            panic!("invoice_reference_already_set");
+        }
+        Self::store_invoice_reference(env, id, reference);
+        Self::publish_invoice_reference_set(env, id, reference);
+    }
+
+    fn create_invoice_record(
+        env: &Env,
+        issuer: Address,
+        payer: Address,
+        amount: i128,
+        currency: Symbol,
+        due_date: u64,
+    ) -> u64 {
+        let id = Self::next_invoice_id(env);
+        let invoice = Self::new_invoice(env, id, issuer, payer, amount, currency, due_date);
+
+        Self::store_invoice(env, &invoice);
+        Self::push_invoice_to_address(env, &invoice.issuer, id);
+        Self::push_invoice_to_address(env, &invoice.payer, id);
+        Self::publish_invoice_created(env, &invoice);
+        id
+    }
+}
 
 #[contractimpl]
 impl StellarInvoiceContract {
     // Create invoice and return id
-    pub fn create_invoice(env: Env, issuer: Address, payer: Address, amount: i128, currency: Symbol, due_date: u64) -> u64 {
-        // increment counter
-        let mut counter = Self::get_counter(&env);
-        counter += 1;
-        Self::set_counter(&env, counter);
+    pub fn create_invoice(
+        env: Env,
+        issuer: Address,
+        payer: Address,
+        amount: i128,
+        currency: Symbol,
+        due_date: u64,
+    ) -> u64 {
+        Self::create_invoice_record(&env, issuer, payer, amount, currency, due_date)
+    }
 
-        let created_at = env.ledger().timestamp();
+    pub fn create_invoice_with_reference(
+        env: Env,
+        issuer: Address,
+        payer: Address,
+        amount: i128,
+        currency: Symbol,
+        due_date: u64,
+        reference: String,
+    ) -> u64 {
+        let id = Self::create_invoice_record(&env, issuer.clone(), payer, amount, currency, due_date);
+        Self::attach_invoice_reference(&env, id, &issuer, &reference);
+        id
+    }
 
-        let invoice = Invoice {
-            id: counter,
-            issuer: issuer.clone(),
-            payer: payer.clone(),
-            amount,
-            currency: currency.clone(),
-            due_date,
-            status: Status::Created,
-            created_at,
-            paid_amount: 0,
-        };
+    pub fn set_invoice_reference(env: Env, invoice_id: u64, issuer: Address, reference: String) {
+        Self::attach_invoice_reference(&env, invoice_id, &issuer, &reference);
+    }
 
-        // persist
-        StellarInvoiceContract::store_invoice(&env, &invoice);
-        StellarInvoiceContract::push_invoice_to_address(&env, &issuer, invoice.id);
-        StellarInvoiceContract::push_invoice_to_address(&env, &payer, invoice.id);
-
-        // emit event
-        env.events().publish((symbol_short!("Invoice"), symbol_short!("Created")), (invoice.id, issuer, payer, amount, currency, due_date));
-
-        invoice.id
+    pub fn get_invoice_reference(env: Env, invoice_id: u64) -> Option<String> {
+        Self::load_invoice(&env, invoice_id).expect("invoice_not_found");
+        Self::load_invoice_reference(&env, invoice_id)
     }
 
     pub fn pay_invoice(env: Env, invoice_id: u64, payer: Address, amount: i128) {
@@ -133,7 +236,10 @@ impl StellarInvoiceContract {
 
         StellarInvoiceContract::store_invoice(&env, &invoice);
 
-        env.events().publish((symbol_short!("Invoice"), symbol_short!("Paid")), (invoice.id, payer, amount, invoice.paid_amount, invoice.status));
+        env.events().publish(
+            (symbol_short!("Invoice"), symbol_short!("Paid")),
+            (invoice.id, payer, amount, invoice.paid_amount, invoice.status),
+        );
     }
 
     pub fn get_invoice(env: Env, invoice_id: u64) -> Invoice {
@@ -163,7 +269,8 @@ impl StellarInvoiceContract {
         if invoice.status != Status::Paid && invoice.status != Status::Cancelled && ts > invoice.due_date {
             invoice.status = Status::Overdue;
             StellarInvoiceContract::store_invoice(&env, &invoice);
-            env.events().publish((symbol_short!("Invoice"), symbol_short!("Overdue")), (invoice.id, invoice.due_date, ts));
+            env.events()
+                .publish((symbol_short!("Invoice"), symbol_short!("Overdue")), (invoice.id, invoice.due_date, ts));
         }
     }
 }
@@ -172,84 +279,345 @@ impl StellarInvoiceContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{testutils::Env as TestEnv, Env, BytesN, Address, Symbol};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Address, Env, Symbol,
+    };
 
-    fn addr_from_byte(env: &Env, b: u8) -> Address {
-        Address::from_contract_id(&env, &BytesN::from_array(&env, &[b; 32]))
+    fn addr_from_byte(env: &Env, _b: u8) -> Address {
+        Address::generate(env)
     }
 
     #[test]
     fn test_full_payment() {
-        let env = TestEnv::default();
-        let issuer = addr_from_byte(&env, 1);
-        let payer = addr_from_byte(&env, 2);
-        let currency = Symbol::short("XLM");
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let issuer = addr_from_byte(&env, 1);
+            let payer = addr_from_byte(&env, 2);
+            let currency = Symbol::short("XLM");
 
-        let id = StellarInvoiceContract::create_invoice(env.clone(), issuer.clone(), payer.clone(), 1000_i128, currency.clone(), env.ledger().timestamp() + 1000);
-        StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 1000_i128);
-        let inv = StellarInvoiceContract::get_invoice(env.clone(), id);
-        assert_eq!(inv.paid_amount, 1000_i128);
-        assert_eq!(inv.status, Status::Paid);
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer.clone(),
+                payer.clone(),
+                1000_i128,
+                currency.clone(),
+                env.ledger().timestamp() + 1000,
+            );
+            StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 1000_i128);
+            let inv = StellarInvoiceContract::get_invoice(env.clone(), id);
+            assert_eq!(inv.paid_amount, 1000_i128);
+            assert_eq!(inv.status, Status::Paid);
+        });
     }
 
     #[test]
     fn test_partial_payment() {
-        let env = TestEnv::default();
-        let issuer = addr_from_byte(&env, 3);
-        let payer = addr_from_byte(&env, 4);
-        let currency = Symbol::short("XLM");
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let issuer = addr_from_byte(&env, 3);
+            let payer = addr_from_byte(&env, 4);
+            let currency = Symbol::short("XLM");
 
-        let id = StellarInvoiceContract::create_invoice(env.clone(), issuer.clone(), payer.clone(), 1000_i128, currency.clone(), env.ledger().timestamp() + 1000);
-        StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 400_i128);
-        let inv = StellarInvoiceContract::get_invoice(env.clone(), id);
-        assert_eq!(inv.paid_amount, 400_i128);
-        assert_eq!(inv.status, Status::PartiallyPaid);
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer.clone(),
+                payer.clone(),
+                1000_i128,
+                currency.clone(),
+                env.ledger().timestamp() + 1000,
+            );
+            StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 400_i128);
+            let inv = StellarInvoiceContract::get_invoice(env.clone(), id);
+            assert_eq!(inv.paid_amount, 400_i128);
+            assert_eq!(inv.status, Status::PartiallyPaid);
+        });
+    }
+
+    #[test]
+    fn test_invoice_ids_are_sequential() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let issuer = addr_from_byte(&env, 12);
+            let payer = addr_from_byte(&env, 13);
+            let due_date = env.ledger().timestamp() + 1000;
+
+            let first = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer.clone(),
+                payer.clone(),
+                100_i128,
+                Symbol::short("XLM"),
+                due_date,
+            );
+            let second = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer,
+                payer,
+                200_i128,
+                Symbol::short("XLM"),
+                due_date,
+            );
+
+            assert_eq!(first, 1);
+            assert_eq!(second, 2);
+        });
+    }
+
+    #[test]
+    fn test_created_invoice_is_indexed_for_both_parties() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let issuer = addr_from_byte(&env, 14);
+            let payer = addr_from_byte(&env, 15);
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer.clone(),
+                payer.clone(),
+                100_i128,
+                Symbol::short("XLM"),
+                env.ledger().timestamp() + 1000,
+            );
+
+            assert_eq!(StellarInvoiceContract::list_invoices_by_address(env.clone(), issuer).get(0), Some(id),);
+            assert_eq!(StellarInvoiceContract::list_invoices_by_address(env.clone(), payer).get(0), Some(id),);
+        });
+    }
+
+    #[test]
+    fn test_create_invoice_with_reference() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.mock_all_auths();
+        let issuer = addr_from_byte(&env, 16);
+        let payer = addr_from_byte(&env, 17);
+        let reference = String::from_str(&env, "PO-2026-0041");
+        let client = StellarInvoiceContractClient::new(&env, &contract_id);
+        let id = client.create_invoice_with_reference(
+            &issuer,
+            &payer,
+            &100_i128,
+            &Symbol::short("XLM"),
+            &(env.ledger().timestamp() + 1000),
+            &reference,
+        );
+
+        assert_eq!(client.get_invoice_reference(&id), Some(reference));
+    }
+
+    #[test]
+    fn test_plain_invoice_has_no_reference() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                addr_from_byte(&env, 18),
+                addr_from_byte(&env, 19),
+                100_i128,
+                Symbol::short("XLM"),
+                env.ledger().timestamp() + 1000,
+            );
+
+            assert_eq!(StellarInvoiceContract::get_invoice_reference(env.clone(), id), None);
+        });
+    }
+
+    #[test]
+    fn test_attach_reference_to_existing_invoice() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.mock_all_auths();
+        let issuer = addr_from_byte(&env, 20);
+        let payer = addr_from_byte(&env, 21);
+        let client = StellarInvoiceContractClient::new(&env, &contract_id);
+        let id = client.create_invoice(
+            &issuer,
+            &payer,
+            &100_i128,
+            &Symbol::short("XLM"),
+            &(env.ledger().timestamp() + 1000),
+        );
+        let reference = String::from_str(&env, "CUSTOMER-7");
+
+        client.set_invoice_reference(&id, &issuer, &reference);
+
+        assert_eq!(client.get_invoice_reference(&id), Some(reference));
+    }
+
+    #[test]
+    #[should_panic(expected = "empty_invoice_reference")]
+    fn test_reject_empty_invoice_reference() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.mock_all_auths();
+        let client = StellarInvoiceContractClient::new(&env, &contract_id);
+        client.create_invoice_with_reference(
+            &addr_from_byte(&env, 22),
+            &addr_from_byte(&env, 23),
+            &100_i128,
+            &Symbol::short("XLM"),
+            &(env.ledger().timestamp() + 1000),
+            &String::from_str(&env, ""),
+        );
+    }
+
+    #[test]
+    fn test_accept_reference_at_length_limit() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.mock_all_auths();
+        let reference = String::from_str(&env, "1234567890123456789012345678901234567890123456789012345678901234");
+        let client = StellarInvoiceContractClient::new(&env, &contract_id);
+        let id = client.create_invoice_with_reference(
+            &addr_from_byte(&env, 24),
+            &addr_from_byte(&env, 25),
+            &100_i128,
+            &Symbol::short("XLM"),
+            &(env.ledger().timestamp() + 1000),
+            &reference,
+        );
+        assert_eq!(client.get_invoice_reference(&id), Some(reference));
+    }
+
+    #[test]
+    #[should_panic(expected = "invoice_reference_too_long")]
+    fn test_reject_reference_over_length_limit() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.mock_all_auths();
+        let client = StellarInvoiceContractClient::new(&env, &contract_id);
+        client.create_invoice_with_reference(
+            &addr_from_byte(&env, 26),
+            &addr_from_byte(&env, 27),
+            &100_i128,
+            &Symbol::short("XLM"),
+            &(env.ledger().timestamp() + 1000),
+            &String::from_str(&env, "12345678901234567890123456789012345678901234567890123456789012345"),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "only_issuer_can_set_reference")]
+    fn test_reject_reference_from_non_issuer() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            env.mock_all_auths();
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                addr_from_byte(&env, 28),
+                addr_from_byte(&env, 29),
+                100_i128,
+                Symbol::short("XLM"),
+                env.ledger().timestamp() + 1000,
+            );
+            StellarInvoiceContract::set_invoice_reference(
+                env.clone(),
+                id,
+                addr_from_byte(&env, 30),
+                String::from_str(&env, "PO-1"),
+            );
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "invoice_reference_already_set")]
+    fn test_reject_reference_replacement() {
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.mock_all_auths();
+        let issuer = addr_from_byte(&env, 31);
+        let client = StellarInvoiceContractClient::new(&env, &contract_id);
+        let id = client.create_invoice_with_reference(
+            &issuer,
+            &addr_from_byte(&env, 32),
+            &100_i128,
+            &Symbol::short("XLM"),
+            &(env.ledger().timestamp() + 1000),
+            &String::from_str(&env, "PO-1"),
+        );
+        client.set_invoice_reference(&id, &issuer, &String::from_str(&env, "PO-2"));
     }
 
     #[test]
     fn test_overdue_transition() {
-        let env = TestEnv::default();
-        let issuer = addr_from_byte(&env, 5);
-        let payer = addr_from_byte(&env, 6);
-        let currency = Symbol::short("XLM");
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let issuer = addr_from_byte(&env, 5);
+            let payer = addr_from_byte(&env, 6);
+            let currency = Symbol::short("XLM");
 
-        // create invoice due immediately
-        let now = env.ledger().timestamp();
-        let id = StellarInvoiceContract::create_invoice(env.clone(), issuer.clone(), payer.clone(), 1000_i128, currency.clone(), now);
+            // create invoice due immediately
+            let now = env.ledger().timestamp();
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer.clone(),
+                payer.clone(),
+                1000_i128,
+                currency.clone(),
+                now,
+            );
 
-        // fast-forward ledger timestamp in testutils
-        env.ledger().set(now + 100);
+            // fast-forward ledger timestamp in testutils
+            env.ledger().set_timestamp(now + 100);
 
-        StellarInvoiceContract::mark_overdue(env.clone(), id);
-        let inv = StellarInvoiceContract::get_invoice(env.clone(), id);
-        assert_eq!(inv.status, Status::Overdue);
+            StellarInvoiceContract::mark_overdue(env.clone(), id);
+            let inv = StellarInvoiceContract::get_invoice(env.clone(), id);
+            assert_eq!(inv.status, Status::Overdue);
+        });
     }
 
     #[test]
     #[should_panic]
     fn test_unauthorized_cancel() {
-        let env = TestEnv::default();
-        let issuer = addr_from_byte(&env, 7);
-        let payer = addr_from_byte(&env, 8);
-        let attacker = addr_from_byte(&env, 9);
-        let currency = Symbol::short("XLM");
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let issuer = addr_from_byte(&env, 7);
+            let payer = addr_from_byte(&env, 8);
+            let attacker = addr_from_byte(&env, 9);
+            let currency = Symbol::short("XLM");
 
-        let id = StellarInvoiceContract::create_invoice(env.clone(), issuer.clone(), payer.clone(), 1000_i128, currency.clone(), env.ledger().timestamp() + 1000);
-        // attacker tries to cancel
-        StellarInvoiceContract::cancel_invoice(env.clone(), id, attacker.clone());
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer.clone(),
+                payer.clone(),
+                1000_i128,
+                currency.clone(),
+                env.ledger().timestamp() + 1000,
+            );
+            // attacker tries to cancel
+            StellarInvoiceContract::cancel_invoice(env.clone(), id, attacker.clone());
+        });
     }
 
     #[test]
     #[should_panic]
     fn test_double_payment_guard() {
-        let env = TestEnv::default();
-        let issuer = addr_from_byte(&env, 10);
-        let payer = addr_from_byte(&env, 11);
-        let currency = Symbol::short("XLM");
+        let env = Env::default();
+        let contract_id = env.register(StellarInvoiceContract, ());
+        env.as_contract(&contract_id, || {
+            let issuer = addr_from_byte(&env, 10);
+            let payer = addr_from_byte(&env, 11);
+            let currency = Symbol::short("XLM");
 
-        let id = StellarInvoiceContract::create_invoice(env.clone(), issuer.clone(), payer.clone(), 1000_i128, currency.clone(), env.ledger().timestamp() + 1000);
-        StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 1000_i128);
-        // second payment should panic due to overpayment
-        StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 1_i128);
+            let id = StellarInvoiceContract::create_invoice(
+                env.clone(),
+                issuer.clone(),
+                payer.clone(),
+                1000_i128,
+                currency.clone(),
+                env.ledger().timestamp() + 1000,
+            );
+            StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 1000_i128);
+            // second payment should panic due to overpayment
+            StellarInvoiceContract::pay_invoice(env.clone(), id, payer.clone(), 1_i128);
+        });
     }
 }

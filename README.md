@@ -10,6 +10,7 @@ Features
 - Mark invoices overdue based on ledger timestamp
 - Persistent storage for invoices and an instance counter
 - Events emitted on create, pay, and status change
+- Optional immutable invoice references for purchase orders and accounting records
 
 Important: This scaffold accepts a currency identifier (Symbol) but does not implement token transfer or multi-currency swapping. Token integration is a future enhancement.
 
@@ -43,6 +44,15 @@ Contract function reference
 - create_invoice(env, issuer: Address, payer: Address, amount: i128, currency: Symbol, due_date: u64) -> u64
   - Creates a new invoice, returns invoice id (u64). Emits Invoice/Created event.
 
+- create_invoice_with_reference(env, issuer: Address, payer: Address, amount: i128, currency: Symbol, due_date: u64, reference: String) -> u64
+  - Creates an invoice and atomically stores an issuer-authorized reference of up to 64 bytes.
+
+- set_invoice_reference(env, invoice_id: u64, issuer: Address, reference: String)
+  - Adds an immutable reference to an existing invoice. The issuer must authorize the call.
+
+- get_invoice_reference(env, invoice_id: u64) -> Option<String>
+  - Returns the invoice reference, or `None` when no reference has been attached.
+
 - pay_invoice(env, invoice_id: u64, payer: Address, amount: i128)
   - Payer pays the invoice. Updates paid_amount and transitions status to PartiallyPaid or Paid. Emits Invoice/Paid event. Panics on unauthorized payer, overpayment, or paying cancelled/paid invoice.
 
@@ -67,4 +77,3 @@ Notes
 1. **Payer Verification**: Only the designated `payer` is authorized to make payments towards an invoice. Overpayments are guarded against at the contract level.
 2. **Issuer Verification**: Only the `issuer` who created the invoice is authorized to cancel it. Cancelation is restricted to unpaid, un-cancelled, and un-expired invoices.
 3. **Overdue Transitions**: The `mark_overdue` function is permissionless but strictly validates the ledger timestamp against the due date before updating the state.
-
