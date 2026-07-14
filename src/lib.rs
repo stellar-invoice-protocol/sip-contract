@@ -60,6 +60,12 @@ impl StellarInvoiceContract {
         env.storage().instance().set(&DataKey::Counter, &v);
     }
 
+    fn next_invoice_id(env: &Env) -> u64 {
+        let id = Self::get_counter(env) + 1;
+        Self::set_counter(env, id);
+        id
+    }
+
     fn store_invoice(env: &Env, invoice: &Invoice) {
         env.storage().persistent().set(&DataKey::Invoice(invoice.id), invoice);
     }
