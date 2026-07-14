@@ -279,15 +279,15 @@ impl StellarInvoiceContract {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{testutils::Env as TestEnv, Address, BytesN, Env, Symbol};
+    use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
-    fn addr_from_byte(env: &Env, b: u8) -> Address {
-        Address::from_contract_id(&env, &BytesN::from_array(&env, &[b; 32]))
+    fn addr_from_byte(env: &Env, _b: u8) -> Address {
+        Address::generate(env)
     }
 
     #[test]
     fn test_full_payment() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let issuer = addr_from_byte(&env, 1);
         let payer = addr_from_byte(&env, 2);
         let currency = Symbol::short("XLM");
@@ -308,7 +308,7 @@ mod test {
 
     #[test]
     fn test_partial_payment() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let issuer = addr_from_byte(&env, 3);
         let payer = addr_from_byte(&env, 4);
         let currency = Symbol::short("XLM");
@@ -329,7 +329,7 @@ mod test {
 
     #[test]
     fn test_invoice_ids_are_sequential() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let issuer = addr_from_byte(&env, 12);
         let payer = addr_from_byte(&env, 13);
         let due_date = env.ledger().timestamp() + 1000;
@@ -357,7 +357,7 @@ mod test {
 
     #[test]
     fn test_created_invoice_is_indexed_for_both_parties() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let issuer = addr_from_byte(&env, 14);
         let payer = addr_from_byte(&env, 15);
         let id = StellarInvoiceContract::create_invoice(
@@ -375,7 +375,7 @@ mod test {
 
     #[test]
     fn test_create_invoice_with_reference() {
-        let env = TestEnv::default();
+        let env = Env::default();
         env.mock_all_auths();
         let issuer = addr_from_byte(&env, 16);
         let reference = String::from_str(&env, "PO-2026-0041");
@@ -395,7 +395,7 @@ mod test {
 
     #[test]
     fn test_plain_invoice_has_no_reference() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let id = StellarInvoiceContract::create_invoice(
             env.clone(),
             addr_from_byte(&env, 18),
@@ -410,7 +410,7 @@ mod test {
 
     #[test]
     fn test_attach_reference_to_existing_invoice() {
-        let env = TestEnv::default();
+        let env = Env::default();
         env.mock_all_auths();
         let issuer = addr_from_byte(&env, 20);
         let id = StellarInvoiceContract::create_invoice(
@@ -431,7 +431,7 @@ mod test {
     #[test]
     #[should_panic(expected = "empty_invoice_reference")]
     fn test_reject_empty_invoice_reference() {
-        let env = TestEnv::default();
+        let env = Env::default();
         env.mock_all_auths();
         StellarInvoiceContract::create_invoice_with_reference(
             env.clone(),
@@ -446,7 +446,7 @@ mod test {
 
     #[test]
     fn test_accept_reference_at_length_limit() {
-        let env = TestEnv::default();
+        let env = Env::default();
         env.mock_all_auths();
         let reference = String::from_str(&env, "1234567890123456789012345678901234567890123456789012345678901234");
         let id = StellarInvoiceContract::create_invoice_with_reference(
@@ -464,7 +464,7 @@ mod test {
     #[test]
     #[should_panic(expected = "invoice_reference_too_long")]
     fn test_reject_reference_over_length_limit() {
-        let env = TestEnv::default();
+        let env = Env::default();
         env.mock_all_auths();
         StellarInvoiceContract::create_invoice_with_reference(
             env.clone(),
@@ -480,7 +480,7 @@ mod test {
     #[test]
     #[should_panic(expected = "only_issuer_can_set_reference")]
     fn test_reject_reference_from_non_issuer() {
-        let env = TestEnv::default();
+        let env = Env::default();
         env.mock_all_auths();
         let id = StellarInvoiceContract::create_invoice(
             env.clone(),
@@ -501,7 +501,7 @@ mod test {
     #[test]
     #[should_panic(expected = "invoice_reference_already_set")]
     fn test_reject_reference_replacement() {
-        let env = TestEnv::default();
+        let env = Env::default();
         env.mock_all_auths();
         let issuer = addr_from_byte(&env, 31);
         let id = StellarInvoiceContract::create_invoice_with_reference(
@@ -518,7 +518,7 @@ mod test {
 
     #[test]
     fn test_overdue_transition() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let issuer = addr_from_byte(&env, 5);
         let payer = addr_from_byte(&env, 6);
         let currency = Symbol::short("XLM");
@@ -545,7 +545,7 @@ mod test {
     #[test]
     #[should_panic]
     fn test_unauthorized_cancel() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let issuer = addr_from_byte(&env, 7);
         let payer = addr_from_byte(&env, 8);
         let attacker = addr_from_byte(&env, 9);
@@ -566,7 +566,7 @@ mod test {
     #[test]
     #[should_panic]
     fn test_double_payment_guard() {
-        let env = TestEnv::default();
+        let env = Env::default();
         let issuer = addr_from_byte(&env, 10);
         let payer = addr_from_byte(&env, 11);
         let currency = Symbol::short("XLM");
