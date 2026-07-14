@@ -80,6 +80,12 @@ impl StellarInvoiceContract {
             .get(&DataKey::InvoiceReference(id))
     }
 
+    fn has_invoice_reference(env: &Env, id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::InvoiceReference(id))
+    }
+
     fn push_invoice_to_address(env: &Env, addr: &Address, id: u64) {
         let key = DataKey::AddrIdx(addr.clone());
         let mut list: Vec<u64> = env.storage().persistent().get(&key).unwrap_or_else(|| Vec::new(env));
