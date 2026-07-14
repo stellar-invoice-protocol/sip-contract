@@ -409,6 +409,26 @@ mod test {
     }
 
     #[test]
+    fn test_attach_reference_to_existing_invoice() {
+        let env = TestEnv::default();
+        env.mock_all_auths();
+        let issuer = addr_from_byte(&env, 20);
+        let id = StellarInvoiceContract::create_invoice(
+            env.clone(),
+            issuer.clone(),
+            addr_from_byte(&env, 21),
+            100_i128,
+            Symbol::short("XLM"),
+            env.ledger().timestamp() + 1000,
+        );
+        let reference = String::from_str(&env, "CUSTOMER-7");
+
+        StellarInvoiceContract::set_invoice_reference(env.clone(), id, issuer, reference.clone());
+
+        assert_eq!(StellarInvoiceContract::get_invoice_reference(env, id), Some(reference));
+    }
+
+    #[test]
     fn test_overdue_transition() {
         let env = TestEnv::default();
         let issuer = addr_from_byte(&env, 5);
