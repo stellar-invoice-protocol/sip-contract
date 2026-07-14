@@ -188,6 +188,10 @@ impl StellarInvoiceContract {
         Self::create_invoice_record(&env, issuer, payer, amount, currency, due_date)
     }
 
+    pub fn set_invoice_reference(env: Env, invoice_id: u64, issuer: Address, reference: String) {
+        Self::attach_invoice_reference(&env, invoice_id, &issuer, &reference);
+    }
+
     pub fn pay_invoice(env: Env, invoice_id: u64, payer: Address, amount: i128) {
         let mut invoice = StellarInvoiceContract::load_invoice(&env, invoice_id).expect("invoice_not_found");
 
