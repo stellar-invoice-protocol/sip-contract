@@ -43,6 +43,12 @@ pub struct StellarInvoiceContract;
 
 
 impl StellarInvoiceContract {
+    fn validate_reference(reference: &String) {
+        if reference.len() == 0 {
+            panic!("empty_invoice_reference");
+        }
+    }
+
     fn get_counter(env: &Env) -> u64 {
         env.storage().instance().get(&DataKey::Counter).unwrap_or(0_u64)
     }
