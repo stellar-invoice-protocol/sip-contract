@@ -270,6 +270,25 @@ mod test {
     }
 
     #[test]
+    fn test_invoice_ids_are_sequential() {
+        let env = TestEnv::default();
+        let issuer = addr_from_byte(&env, 12);
+        let payer = addr_from_byte(&env, 13);
+        let due_date = env.ledger().timestamp() + 1000;
+
+        let first = StellarInvoiceContract::create_invoice(
+            env.clone(), issuer.clone(), payer.clone(), 100_i128,
+            Symbol::short("XLM"), due_date,
+        );
+        let second = StellarInvoiceContract::create_invoice(
+            env.clone(), issuer, payer, 200_i128, Symbol::short("XLM"), due_date,
+        );
+
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
+    }
+
+    #[test]
     fn test_overdue_transition() {
         let env = TestEnv::default();
         let issuer = addr_from_byte(&env, 5);
