@@ -6,5 +6,5 @@ pub mod storage;
 pub mod events;
 pub mod errors;
 
-#[cfg(test)]
-pub mod test_utils;
+pub use contract::StellarInvoiceContract;
+pub use types::{Invoice, Status};

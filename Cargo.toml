@@ -2,8 +2,9 @@
 name = "stellar-invoice-protocol"
 version = "0.1.0"
 edition = "2021"
-description = "Stellar Invoice Protocol - Soroban smart contract"
+description = "Stellar Invoice Protocol - Soroban smart contract for invoice lifecycle management"
 license = "MIT"
+repository = "https://github.com/yourusername/stellar-invoice-protocol"  # optional
 
 [lib]
 crate-type = ["cdylib"]
