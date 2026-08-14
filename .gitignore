@@ -7,6 +7,10 @@ Cargo.lock
 *.wasm
 pkg/
 
+# Deploy secrets and ephemeral deploy state — never commit these
+deploy-testnet.env
+.last-deploy-testnet
+
 # Editor and OS files
 .DS_Store
 Thumbs.db
