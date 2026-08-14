@@ -1,3 +1,5 @@
+[![CI](https://github.com/stellar-invoice-protocol/stellar-contract/actions/workflows/ci.yml/badge.svg)](https://github.com/stellar-invoice-protocol/stellar-contract/actions/workflows/ci.yml)
+
 # Stellar Invoice Protocol
 
 A Soroban smart contract (Rust) implementing an invoice lifecycle on Stellar.
@@ -26,7 +28,15 @@ Install the Rust `wasm32-unknown-unknown` target and the Stellar CLI, then:
 cargo test
 
 # Build the WASM binary
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32-unknown-unknown --release --locked
+```
+
+Or use the Makefile shortcuts (see `make help`):
+
+```bash
+make test    # run the test suite
+make build   # compile the release WASM
+make all     # fmt + lint + test + build in sequence
 ```
 
 See `docs/compiling.md` for full build instructions.
@@ -34,13 +44,19 @@ See `docs/compiling.md` for full build instructions.
 ## Deploying
 
 ```bash
-stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/stellar_invoice_protocol.wasm \
-  --source <YOUR_ACCOUNT> \
-  --network testnet
+cp deploy-testnet.env.example deploy-testnet.env
+# edit deploy-testnet.env with your account details
+source deploy-testnet.env && ./deploy-testnet.sh
 ```
 
-See `docs/deploying.md` for step-by-step instructions.
+After deploying, verify the on-chain binary matches your local build:
+
+```bash
+./verify-build.sh <CONTRACT_ID>
+```
+
+See `docs/deploying.md` for step-by-step instructions including manual
+deployment and mainnet deployment.
 
 ## Function reference
 
@@ -155,14 +171,27 @@ See `docs/access-control.md` for a detailed breakdown.
 | `docs/architecture.md` | Module layout and data flow |
 | `docs/access-control.md` | `require_auth` model, per function |
 | `docs/data-storage.md` | `DataKey` design, storage tiers, TTL strategy |
-| `docs/error-codes.md` | `InvoiceError` variants and when they fire |
+| `docs/error-codes.md` | `InvoiceError` variants, which functions raise them, and exact conditions |
 | `docs/types.md` | `Invoice` struct and `Status` enum, field by field |
 | `docs/testing.md` | How to run tests, what's covered, what isn't |
 | `docs/security-considerations.md` | Auth model, overflow guards, audit checklist |
 | `docs/integration.md` | Calling this contract from Rust or JS, with code snippets |
-| `docs/deploying.md` | Build and deploy steps |
+| `docs/deploying.md` | Build, deploy, and build-verification steps |
 | `docs/compiling.md` | Compiler requirements and build commands |
 | `docs/re-entrancy.md` | Soroban's re-entrancy model and applicability here |
+
+## Roadmap
+
+- [x] Invoice lifecycle: create, pay (partial/full), cancel, mark-overdue
+- [x] Full auth enforcement via `require_auth()`
+- [x] Typed error enum with 9 variants, all tested
+- [x] TTL-managed persistent storage (threshold 30 days, extend-to 90 days)
+- [x] Events on every state transition (Created, Paid, Cancelled, Overdue)
+- [x] Full unit test suite — 41 tests, all error variants covered
+- [x] Reproducible build verification script (`verify-build.sh`)
+- [x] Automated deploy script (`deploy-testnet.sh`)
+- [ ] Testnet deployment (run `deploy-testnet.sh` and add real contract ID here)
+- [ ] Token transfer integration (pay_invoice triggers a real asset transfer)
 
 ## License
 
