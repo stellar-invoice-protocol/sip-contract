@@ -1,79 +1,198 @@
+[![CI](https://github.com/stellar-invoice-protocol/stellar-contract/actions/workflows/ci.yml/badge.svg)](https://github.com/stellar-invoice-protocol/stellar-contract/actions/workflows/ci.yml)
+
 # Stellar Invoice Protocol
 
-A Soroban smart contract (Rust) implementing a simple invoice lifecycle on Stellar (Soroban).
+A Soroban smart contract (Rust) implementing an invoice lifecycle on Stellar.
 
-Features
-- Create invoices with issuer, payer, amount, currency identifier, due date
-- Pay invoices (partial and full payments supported)
-- Automatic status transitions (Created, PartiallyPaid, Paid, Overdue, Cancelled)
-- List invoices by address (both issuer and payer)
-- Mark invoices overdue based on ledger timestamp
-- Persistent storage for invoices and an instance counter
-- Events emitted on create, pay, and status change
-- Optional immutable invoice references for purchase orders and accounting records
+## Project status
 
-Important: This scaffold accepts a currency identifier (Symbol) but does not implement token transfer or multi-currency swapping. Token integration is a future enhancement.
+**Implemented in this version:**
+- Create, pay, cancel, and mark-overdue lifecycle for invoices
+- Partial payment support with accumulated `paid_amount`
+- Persistent storage with TTL extension on every access
+- Events on create, pay, cancel, and overdue transition
+- `require_auth()` enforced on all mutating, identity-bound operations
+- Full unit test suite covering all public functions and every error variant
 
-Building
+**Not implemented (out of scope for this milestone):**
+- Token transfer — the `currency` field is a record-keeping label only; no funds move
+- Multi-currency swaps or oracle pricing
+- Invoice references / purchase-order attachments
 
-Install the Soroban toolchain and wasm target (see CONTRIBUTING.md). Then build the wasmbinary with:
+## Building
 
-- Using soroban CLI: `stellar contract build`
-- Or direct Rust build: `cargo build --target wasm32-unknown-unknown --release`
+Install the Rust `wasm32-unknown-unknown` target and the Stellar CLI, then:
 
-Running tests
-
-Run unit tests with:
-
-```text
+```bash
+# Run unit tests (native)
 cargo test
+
+# Build the WASM binary
+cargo build --target wasm32-unknown-unknown --release --locked
 ```
 
-Deploying to testnet
+Or use the Makefile shortcuts (see `make help`):
 
-After building, deploy using the Stellar CLI / soroban tooling:
-
-```text
-stellar contract deploy --wasm target/wasm32-unknown-unknown/release/stellar-invoice-protocol.wasm --network testnet
+```bash
+make test    # run the test suite
+make build   # compile the release WASM
+make all     # fmt + lint + test + build in sequence
 ```
 
-(Adjust the path to your .wasm artifact if needed.)
+See `docs/compiling.md` for full build instructions.
 
-Contract function reference
+## Deploying
 
-- create_invoice(env, issuer: Address, payer: Address, amount: i128, currency: Symbol, due_date: u64) -> u64
-  - Creates a new invoice, returns invoice id (u64). Emits Invoice/Created event.
+```bash
+cp deploy-testnet.env.example deploy-testnet.env
+# edit deploy-testnet.env with your account details
+source deploy-testnet.env && ./deploy-testnet.sh
+```
 
-- create_invoice_with_reference(env, issuer: Address, payer: Address, amount: i128, currency: Symbol, due_date: u64, reference: String) -> u64
-  - Creates an invoice and atomically stores an issuer-authorized reference of up to 64 bytes.
+After deploying, verify the on-chain binary matches your local build:
 
-- set_invoice_reference(env, invoice_id: u64, issuer: Address, reference: String)
-  - Adds an immutable reference to an existing invoice. The issuer must authorize the call.
+```bash
+./verify-build.sh <CONTRACT_ID>
+```
 
-- get_invoice_reference(env, invoice_id: u64) -> Option<String>
-  - Returns the invoice reference, or `None` when no reference has been attached.
+See `docs/deploying.md` for step-by-step instructions including manual
+deployment and mainnet deployment.
 
-- pay_invoice(env, invoice_id: u64, payer: Address, amount: i128)
-  - Payer pays the invoice. Updates paid_amount and transitions status to PartiallyPaid or Paid. Emits Invoice/Paid event. Panics on unauthorized payer, overpayment, or paying cancelled/paid invoice.
+## Function reference
 
-- get_invoice(env, invoice_id: u64) -> Invoice
-  - Returns the Invoice struct for given id. Panics if invoice not found.
+All functions return `Result<T, InvoiceError>` unless noted.
 
-- cancel_invoice(env, invoice_id: u64, issuer: Address)
-  - Cancels an unpaid invoice. Only the issuer may cancel. Panics if unauthorized or if invoice already has payment or is paid.
+### `create_invoice`
 
-- list_invoices_by_address(env, address: Address) -> Vec<u64>
-  - Returns invoice ids associated with the given address (issuer or payer).
+```
+create_invoice(
+    env: Env,
+    issuer: Address,
+    payer: Address,
+    amount: i128,
+    currency: Symbol,
+    due_date: u64,
+) -> Result<u64, InvoiceError>
+```
 
-- mark_overdue(env, invoice_id: u64)
-  - Anyone may call this. If the ledger timestamp is past the invoice due_date and invoice is unpaid, status changes to Overdue and an event is emitted.
+Creates a new invoice and returns its id. `issuer` must authorize the call.
 
-Notes
-- Currency is represented as a Symbol (e.g., `Symbol::short("XLM")`) or any token contract Address can be stored in the currency field in future updates.
-- This initial version focuses on invoice lifecycle and storage; token transfers are out of scope for this iteration.
+Errors: `InvalidAmount` (amount ≤ 0), `InvalidDueDate` (due_date ≤ current ledger timestamp).
+
+### `pay_invoice`
+
+```
+pay_invoice(
+    env: Env,
+    invoice_id: u64,
+    payer: Address,
+    amount: i128,
+) -> Result<(), InvoiceError>
+```
+
+Records a payment. `payer` must authorize the call. Partial payments are allowed;
+status transitions to `PartiallyPaid` or `Paid` accordingly.
+
+Errors: `InvalidAmount`, `InvoiceNotFound`, `UnauthorizedPayer`, `InvoiceNotPayable`,
+`PaidAmountOverflow`, `OverpaymentNotAllowed`.
+
+### `get_invoice`
+
+```
+get_invoice(env: Env, invoice_id: u64) -> Result<Invoice, InvoiceError>
+```
+
+Returns the full `Invoice` struct for the given id. No authorization required.
+
+Errors: `InvoiceNotFound`.
+
+### `cancel_invoice`
+
+```
+cancel_invoice(
+    env: Env,
+    invoice_id: u64,
+    issuer: Address,
+) -> Result<(), InvoiceError>
+```
+
+Cancels an invoice. `issuer` must authorize the call. A fully paid invoice cannot
+be cancelled.
+
+Errors: `InvoiceNotFound`, `OnlyIssuerCanCancel`, `CannotCancelPaidInvoice`,
+`InvoiceNotPayable` (already cancelled).
+
+### `list_invoices_by_address`
+
+```
+list_invoices_by_address(env: Env, addr: Address) -> Vec<u64>
+```
+
+Returns all invoice ids associated with an address (whether as issuer or payer).
+No authorization required.
+
+### `mark_overdue`
+
+```
+mark_overdue(env: Env, invoice_id: u64) -> Result<(), InvoiceError>
+```
+
+Permissionless. Transitions a `Created` or `PartiallyPaid` invoice to `Overdue`
+if the ledger timestamp is past `due_date`. The caller identity is irrelevant —
+the condition is entirely time-driven and consensus-determined.
+
+Errors: `InvoiceNotFound`, `InvoiceNotPayable` (not in a transitionable state, or
+due_date not yet passed).
 
 ## Security & Access Control
 
-1. **Payer Verification**: Only the designated `payer` is authorized to make payments towards an invoice. Overpayments are guarded against at the contract level.
-2. **Issuer Verification**: Only the `issuer` who created the invoice is authorized to cancel it. Cancelation is restricted to unpaid, un-cancelled, and un-expired invoices.
-3. **Overdue Transitions**: The `mark_overdue` function is permissionless but strictly validates the ledger timestamp against the due date before updating the state.
+`require_auth()` is called on the relevant address as the first statement in every
+function that acts on behalf of a named party:
+
+| Function | Authorized party |
+|---|---|
+| `create_invoice` | `issuer` |
+| `pay_invoice` | `payer` |
+| `cancel_invoice` | `issuer` |
+| `get_invoice` | none (read-only) |
+| `list_invoices_by_address` | none (read-only) |
+| `mark_overdue` | none (permissionless by design) |
+
+After the auth check, each function also verifies that the authorized address matches
+the role stored on the invoice (`invoice.issuer` or `invoice.payer`). Both checks are
+required.
+
+See `docs/access-control.md` for a detailed breakdown.
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| `docs/architecture.md` | Module layout and data flow |
+| `docs/access-control.md` | `require_auth` model, per function |
+| `docs/data-storage.md` | `DataKey` design, storage tiers, TTL strategy |
+| `docs/error-codes.md` | `InvoiceError` variants, which functions raise them, and exact conditions |
+| `docs/types.md` | `Invoice` struct and `Status` enum, field by field |
+| `docs/testing.md` | How to run tests, what's covered, what isn't |
+| `docs/security-considerations.md` | Auth model, overflow guards, audit checklist |
+| `docs/integration.md` | Calling this contract from Rust or JS, with code snippets |
+| `docs/deploying.md` | Build, deploy, and build-verification steps |
+| `docs/compiling.md` | Compiler requirements and build commands |
+| `docs/re-entrancy.md` | Soroban's re-entrancy model and applicability here |
+
+## Roadmap
+
+- [x] Invoice lifecycle: create, pay (partial/full), cancel, mark-overdue
+- [x] Full auth enforcement via `require_auth()`
+- [x] Typed error enum with 9 variants, all tested
+- [x] TTL-managed persistent storage (threshold 30 days, extend-to 90 days)
+- [x] Events on every state transition (Created, Paid, Cancelled, Overdue)
+- [x] Full unit test suite — 41 tests, all error variants covered
+- [x] Reproducible build verification script (`verify-build.sh`)
+- [x] Automated deploy script (`deploy-testnet.sh`)
+- [ ] Testnet deployment (run `deploy-testnet.sh` and add real contract ID here)
+- [ ] Token transfer integration (pay_invoice triggers a real asset transfer)
+
+## License
+
+MIT
