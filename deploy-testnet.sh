@@ -19,14 +19,15 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 STELLAR_SOURCE="${STELLAR_SOURCE:?ERROR: STELLAR_SOURCE is not set. See deploy-testnet.env.example}"
 NETWORK="${NETWORK:-testnet}"
-WASM_PATH="target/wasm32-unknown-unknown/release/stellar_invoice_protocol.wasm"
+WASM_PATH="target/wasm32v1-none/release/stellar_invoice_protocol.wasm"
 DEPLOY_RECORD=".last-deploy-testnet"
 
 # ---------------------------------------------------------------------------
-# Build
+# Build (via stellar contract build so the optimizer runs and the hash matches
+# what verify-build.sh will compute)
 # ---------------------------------------------------------------------------
-echo "[deploy] Building release WASM..."
-cargo build --target wasm32-unknown-unknown --release --locked
+echo "[deploy] Building optimized release WASM..."
+stellar contract build --locked
 
 if [[ ! -f "$WASM_PATH" ]]; then
     echo "[deploy] ERROR: WASM artifact not found at $WASM_PATH" >&2

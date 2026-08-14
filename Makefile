@@ -8,7 +8,7 @@
 #   make all       — fmt + lint + test + build in sequence
 #   make help      — list targets
 
-WASM_TARGET = wasm32-unknown-unknown
+WASM_TARGET = wasm32v1-none
 WASM_ARTIFACT = target/$(WASM_TARGET)/release/stellar_invoice_protocol.wasm
 
 .PHONY: fmt lint test build all help

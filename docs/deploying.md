@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-- Rust with the `wasm32-unknown-unknown` target:
+- Rust with the `wasm32v1-none` target (current Soroban-recommended target):
   ```bash
-  rustup target add wasm32-unknown-unknown
+  rustup target add wasm32v1-none
   ```
 - The Stellar CLI (`stellar`):
   ```bash
@@ -16,12 +16,12 @@
 ## 1. Build the WASM
 
 ```bash
-cargo build --target wasm32-unknown-unknown --release --locked
+cargo build --target wasm32v1-none --release --locked
 ```
 
 The artifact is at:
 ```
-target/wasm32-unknown-unknown/release/stellar_invoice_protocol.wasm
+target/wasm32v1-none/release/stellar_invoice_protocol.wasm
 ```
 
 Alternatively, use the Stellar CLI which runs the build and applies additional
@@ -47,7 +47,7 @@ ID to `.last-deploy-testnet`.
 
 ```bash
 stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/stellar_invoice_protocol.wasm \
+  --wasm target/wasm32v1-none/release/stellar_invoice_protocol.wasm \
   --source <YOUR_ACCOUNT_ALIAS> \
   --network testnet
 ```
